@@ -5,6 +5,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
+from . import __version__
 from .analyzer import build_trace
 from .config import load_config
 from .diffing import build_diff, render_diff_text, write_diff_html
@@ -14,6 +15,7 @@ from .providers import ProviderError, get_provider
 from .redaction import apply_redaction
 from .renderer import write_html, write_json
 from .store import index_trace, load_trace, load_registry
+from .updater import maybe_get_update_message
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -77,6 +79,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers.add_parser("migrate", help="Run storage migrations to the latest schema version.")
+
+    version = subparsers.add_parser("version", help="Show the installed CLI version.")
+    version.add_argument(
+        "--check-updates",
+        action="store_true",
+        help="Also check whether a newer package version is available",
+    )
     return parser
 
 
@@ -220,9 +229,23 @@ def run_migrate(_: argparse.Namespace) -> int:
     return 0
 
 
+def run_version(args: argparse.Namespace) -> int:
+    app_config = load_config()
+    print(f"InsightForge version: {__version__}")
+    if args.check_updates:
+        message = maybe_get_update_message(__version__, app_config.updates)
+        print(message if message else "InsightForge is up to date or update check is unavailable.")
+    return 0
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    app_config = load_config()
+    if args.command_name != "version":
+        update_message = maybe_get_update_message(__version__, app_config.updates)
+        if update_message:
+            print(update_message)
 
     if args.command_name == "wrap":
         return run_wrap(args)
@@ -236,6 +259,8 @@ def main() -> int:
         return run_schema_version(args)
     if args.command_name == "migrate":
         return run_migrate(args)
+    if args.command_name == "version":
+        return run_version(args)
 
     parser.error("Unknown command")
     return 2

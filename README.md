@@ -89,6 +89,12 @@ pipx install insightforge
 
 That gives developers a global `insightforge` command without needing a project-local virtualenv.
 
+Users are automatically notified in the CLI when PyPI has a newer InsightForge release. They can also check manually with:
+
+```bash
+insightforge version --check-updates
+```
+
 Comparison workflow:
 
 ```bash
@@ -105,6 +111,14 @@ Storage maintenance:
 insightforge schema-version --expected
 insightforge migrate
 ```
+
+CI/CD automation:
+
+- `.github/workflows/ci.yml` runs compile, tests, and package builds on every push and pull request.
+- `.github/workflows/release.yml` runs on `main`, re-tests the package, compares the local version to PyPI, and publishes only when the version is newer.
+- Users then see the update prompt in the CLI and can upgrade with `pipx upgrade insightforge`.
+
+To enable release publishing, add the `PYPI_API_TOKEN` secret in GitHub Actions for this repository.
 
 Policy and redaction config:
 
@@ -124,6 +138,8 @@ Other knobs:
 - `policy.max_output_chars`
 - `redaction.enabled`
 - `storage.sqlite_path`
+- `updates.enabled`
+- `updates.check_interval_hours`
 
 ## Example
 

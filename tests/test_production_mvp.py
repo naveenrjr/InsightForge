@@ -10,6 +10,7 @@ from insightforge.migrations import CURRENT_DB_SCHEMA_VERSION, get_schema_versio
 from insightforge.policy import evaluate_policies
 from insightforge.redaction import apply_redaction
 from insightforge.store import index_trace, load_registry, load_trace
+from insightforge.updater import is_newer_version
 
 
 class ProductionMvpTests(unittest.TestCase):
@@ -120,6 +121,11 @@ class ProductionMvpTests(unittest.TestCase):
             self.assertEqual(1, before)
             self.assertEqual(CURRENT_DB_SCHEMA_VERSION, after)
             self.assertEqual(CURRENT_DB_SCHEMA_VERSION, get_schema_version(config))
+
+    def test_version_comparison_detects_newer_release(self) -> None:
+        self.assertTrue(is_newer_version("0.2.0", "0.1.9"))
+        self.assertFalse(is_newer_version("0.1.0", "0.1.0"))
+        self.assertFalse(is_newer_version("0.1.0", "0.2.0"))
 
 
 if __name__ == "__main__":

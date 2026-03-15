@@ -12,6 +12,7 @@ license = { text = "MIT" }
 authors = [
   { name = "InsightForge" }
 ]
+urls = { Homepage = "https://github.com/your-org/InsightForge", Repository = "https://github.com/your-org/InsightForge" }
 keywords = ["ai", "observability", "auditability", "cli", "transparency"]
 classifiers = [
   "Development Status :: 3 - Alpha",

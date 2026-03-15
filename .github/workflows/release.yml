@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: python -m pip install --upgrade pip build
+
+      - name: Install package
+        run: python -m pip install -e .
+
+      - name: Run tests
+        env:
+          INSIGHTFORGE_SKIP_UPDATE_CHECK: "1"
+        run: python -m unittest discover -s tests -v
+
+      - name: Build distribution
+        run: python -m build
+
+      - name: Check PyPI version
+        id: version_check
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import tomllib
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          package_name = pyproject["project"]["name"]
+          local_version = pyproject["project"]["version"]
+          latest_version = None
+          should_publish = False
+
+          try:
+              with urllib.request.urlopen(f"https://pypi.org/pypi/{package_name}/json", timeout=5) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
+              latest_version = payload["info"]["version"]
+              should_publish = latest_version != local_version
+          except urllib.error.HTTPError as exc:
+              if exc.code != 404:
+                  raise
+              should_publish = True
+          except urllib.error.URLError:
+              should_publish = False
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"package_name={package_name}\n")
+              handle.write(f"local_version={local_version}\n")
+              handle.write(f"latest_version={latest_version or ''}\n")
+              handle.write(f"should_publish={'true' if should_publish else 'false'}\n")
+          PY
+
+      - name: Publish to PyPI
+        if: steps.version_check.outputs.should_publish == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Create GitHub release
+        if: steps.version_check.outputs.should_publish == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version_check.outputs.local_version }}
+          name: v${{ steps.version_check.outputs.local_version }}
+          files: dist/*
+          generate_release_notes: true

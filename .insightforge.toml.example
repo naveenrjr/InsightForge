@@ -18,3 +18,8 @@ patterns = [
 
 [storage]
 sqlite_path = ".insightforge/traces.db"
+
+[updates]
+enabled = true
+package_name = "insightforge"
+check_interval_hours = 24
