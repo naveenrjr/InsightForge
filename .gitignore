@@ -5,3 +5,4 @@ __pycache__/
 .insightforge/
 traces/
 *.egg-info/
+PROJECT_CONTEXT.md
