@@ -118,7 +118,19 @@ CI/CD automation:
 - `.github/workflows/release.yml` runs on `main`, re-tests the package, compares the local version to PyPI, and publishes only when the version is newer.
 - Users then see the update prompt in the CLI and can upgrade with `pipx upgrade insightforge`.
 
-To enable release publishing, add the `PYPI_API_TOKEN` secret in GitHub Actions for this repository.
+Trusted Publishing setup:
+
+1. Push this repository to GitHub.
+2. In GitHub, keep Actions enabled for the repository.
+3. In PyPI, add a Trusted Publisher for this project with:
+   - Owner: your GitHub user or org
+   - Repository: `InsightForge`
+   - Workflow name: `release.yml`
+   - Environment name: `pypi`
+4. In GitHub, no `PYPI_API_TOKEN` secret is needed for publishing.
+5. Bump the version in `pyproject.toml`, merge/push to `main`, and the release workflow will publish automatically if tests pass and the version is newer than PyPI.
+
+If you want a dry run before real publishing, point the same workflow model at TestPyPI first and use a separate trusted publisher there.
 
 Policy and redaction config:
 
