@@ -48,6 +48,7 @@ It is intentionally simple. The point is to prove the workflow before building p
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
+cp .insightforge.toml.example .insightforge.toml
 insightforge wrap claude "Explain why this migration failed" --cmd "python3 -c 'print(\"Maybe the issue is a missing foreign key\")'"
 ```
 
@@ -74,6 +75,20 @@ Supported providers today:
 
 The provider adapters use only the Python standard library so the project stays dependency-light.
 
+CLI install options for other developers:
+
+```bash
+pipx install git+https://github.com/<your-org>/InsightForge.git
+```
+
+Or from a published package:
+
+```bash
+pipx install insightforge
+```
+
+That gives developers a global `insightforge` command without needing a project-local virtualenv.
+
 Comparison workflow:
 
 ```bash
@@ -97,12 +112,15 @@ Policy and redaction config:
 cp .insightforge.toml.example .insightforge.toml
 ```
 
-Example knobs:
+The checked-in defaults are intentionally strict for factual audit demos:
 
-- `policy.min_confidence`
-- `policy.require_sources`
-- `policy.fail_on_stderr`
-- `policy.block_absolute_language`
+- `policy.min_confidence = 0.85`
+- `policy.require_sources = true`
+- `policy.fail_on_stderr = true`
+- `policy.block_absolute_language = true`
+
+Other knobs:
+
 - `policy.max_output_chars`
 - `redaction.enabled`
 - `storage.sqlite_path`
