@@ -48,7 +48,7 @@ It is intentionally simple. The point is to prove the workflow before building p
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
-cp .insightforge.toml.example .insightforge.toml
+insightforge init
 insightforge wrap claude "Explain why this migration failed" --cmd "python3 -c 'print(\"Maybe the issue is a missing foreign key\")'"
 ```
 
@@ -95,6 +95,14 @@ Users are automatically notified in the CLI when PyPI has a newer InsightForge r
 insightforge version --check-updates
 ```
 
+First-run setup for installed users:
+
+```bash
+insightforge init
+```
+
+That writes a starter `.insightforge.toml` into the current directory using the same strict demo defaults documented in this repo.
+
 Comparison workflow:
 
 ```bash
@@ -135,7 +143,7 @@ If you want a dry run before real publishing, point the same workflow model at T
 Policy and redaction config:
 
 ```bash
-cp .insightforge.toml.example .insightforge.toml
+insightforge init
 ```
 
 The checked-in defaults are intentionally strict for factual audit demos:

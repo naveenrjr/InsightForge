@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from argparse import Namespace
 from pathlib import Path
 
 from insightforge.analyzer import build_trace
+from insightforge.cli import run_init
 from insightforge.config import AppConfig, PolicyConfig, RedactionConfig, StorageConfig
 from insightforge.migrations import CURRENT_DB_SCHEMA_VERSION, get_schema_version, migrate_storage
 from insightforge.policy import evaluate_policies
@@ -126,6 +128,24 @@ class ProductionMvpTests(unittest.TestCase):
         self.assertTrue(is_newer_version("0.2.0", "0.1.9"))
         self.assertFalse(is_newer_version("0.1.0", "0.1.0"))
         self.assertFalse(is_newer_version("0.1.0", "0.2.0"))
+
+    def test_init_writes_default_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path.cwd()
+            try:
+                import os
+
+                os.chdir(tmp)
+                result = run_init(Namespace(force=False))
+                config_path = Path(".insightforge.toml")
+                exists = config_path.exists()
+                contents = config_path.read_text(encoding="utf-8") if exists else ""
+            finally:
+                os.chdir(cwd)
+
+        self.assertEqual(0, result)
+        self.assertTrue(exists)
+        self.assertIn("min_confidence = 0.85", contents)
 
 
 if __name__ == "__main__":

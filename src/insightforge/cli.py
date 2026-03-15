@@ -8,6 +8,7 @@ from pathlib import Path
 from . import __version__
 from .analyzer import build_trace
 from .config import load_config
+from .default_config import DEFAULT_CONFIG_TEMPLATE
 from .diffing import build_diff, render_diff_text, write_diff_html
 from .migrations import CURRENT_DB_SCHEMA_VERSION, get_schema_version, migrate_storage
 from .policy import evaluate_policies
@@ -85,6 +86,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--check-updates",
         action="store_true",
         help="Also check whether a newer package version is available",
+    )
+
+    init = subparsers.add_parser("init", help="Write a starter .insightforge.toml in the current directory.")
+    init.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing config file if one already exists",
     )
     return parser
 
@@ -238,6 +246,18 @@ def run_version(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_init(args: argparse.Namespace) -> int:
+    destination = Path(".insightforge.toml")
+    if destination.exists() and not args.force:
+        print(f"Config already exists at {destination}. Re-run with --force to overwrite it.")
+        return 1
+
+    destination.write_text(DEFAULT_CONFIG_TEMPLATE, encoding="utf-8")
+    print(f"Wrote starter config to {destination}")
+    print("Next step: run `insightforge ask ...` or adjust policy settings in the config file.")
+    return 0
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
@@ -261,6 +281,8 @@ def main() -> int:
         return run_migrate(args)
     if args.command_name == "version":
         return run_version(args)
+    if args.command_name == "init":
+        return run_init(args)
 
     parser.error("Unknown command")
     return 2
