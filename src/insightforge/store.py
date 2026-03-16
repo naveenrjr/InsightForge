@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .config import StorageConfig
 from .migrations import migrate_storage
-from .models import PolicyResult, RiskFlag, TraceNode, TraceRecord
+from .models import EvidenceCheck, PolicyResult, RiskFlag, TraceNode, TraceRecord
 
 
 REGISTRY_DIR = Path(".insightforge")
@@ -121,6 +121,7 @@ def _trace_from_payload(payload: dict) -> TraceRecord:
         confidence_score=float(payload.get("confidence_score", 0.0)),
         bias_flags=[RiskFlag(**flag) for flag in payload.get("bias_flags", [])],
         hallucination_flags=[RiskFlag(**flag) for flag in payload.get("hallucination_flags", [])],
+        evidence_checks=[EvidenceCheck(**item) for item in payload.get("evidence_checks", [])],
         policy_results=[PolicyResult(**result) for result in payload.get("policy_results", [])],
         overall_status=payload.get("overall_status", "unknown"),
         provenance=list(payload.get("provenance", [])),

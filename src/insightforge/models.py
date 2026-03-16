@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from hashlib import sha1
 
 
-TRACE_SCHEMA_VERSION = "0.2"
+TRACE_SCHEMA_VERSION = "0.3"
 
 
 def utc_now_iso() -> str:
@@ -44,6 +44,18 @@ class PolicyResult:
 
 
 @dataclass(slots=True)
+class EvidenceCheck:
+    url: str
+    status: str
+    category: str
+    detail: str
+    http_status: int | None = None
+    content_type: str = ""
+    title: str = ""
+    snippet: str = ""
+
+
+@dataclass(slots=True)
 class TraceRecord:
     version: str = TRACE_SCHEMA_VERSION
     captured_at: str = field(default_factory=utc_now_iso)
@@ -60,6 +72,7 @@ class TraceRecord:
     confidence_score: float = 0.0
     bias_flags: list[RiskFlag] = field(default_factory=list)
     hallucination_flags: list[RiskFlag] = field(default_factory=list)
+    evidence_checks: list[EvidenceCheck] = field(default_factory=list)
     policy_results: list[PolicyResult] = field(default_factory=list)
     overall_status: str = "unknown"
     provenance: list[str] = field(default_factory=list)

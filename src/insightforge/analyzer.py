@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
-from .models import RiskFlag, TraceNode, TraceRecord
+from .models import EvidenceCheck, RiskFlag, TraceNode, TraceRecord
 
 
 HEDGE_PATTERNS = (
@@ -50,6 +50,12 @@ def _build_summary(prompt: str, stdout: str, stderr: str, risk_count: int) -> st
     return "Execution completed successfully with a low-risk heuristic profile."
 
 
+def _evidence_metrics(evidence_checks: Sequence[EvidenceCheck]) -> tuple[int, int]:
+    reachable = sum(1 for item in evidence_checks if item.status == "reachable")
+    problematic = sum(1 for item in evidence_checks if item.status in {"unreachable", "timeout", "invalid", "blocked"})
+    return reachable, problematic
+
+
 def build_trace(
     *,
     prompt: str,
@@ -62,6 +68,7 @@ def build_trace(
     exit_code: int,
     metadata: dict[str, str] | None = None,
     provenance_notes: Sequence[str] | None = None,
+    evidence_checks: Sequence[EvidenceCheck] | None = None,
 ) -> TraceRecord:
     output_blob = "\n".join(part for part in (stdout, stderr) if part)
     hedge_hits = _count_matches(HEDGE_PATTERNS, output_blob)
@@ -69,12 +76,15 @@ def build_trace(
     bias_hits = _count_matches(BIAS_PATTERNS, output_blob)
     stderr_penalty = 0.2 if stderr.strip() else 0.0
     empty_penalty = 0.15 if not stdout.strip() else 0.0
+    reachable_sources, problematic_sources = _evidence_metrics(evidence_checks or [])
 
     confidence = 0.72
     confidence -= min(0.24, hedge_hits * 0.04)
     confidence -= min(0.20, bias_hits * 0.05)
     confidence -= stderr_penalty + empty_penalty
     confidence += min(0.18, source_hits * 0.06)
+    confidence += min(0.12, reachable_sources * 0.06)
+    confidence -= min(0.18, problematic_sources * 0.06)
     confidence = max(0.05, min(0.99, round(confidence, 2)))
 
     bias_flags: list[RiskFlag] = []
@@ -119,6 +129,17 @@ def build_trace(
             )
         )
 
+    if problematic_sources:
+        hallucination_flags.append(
+            RiskFlag(
+                code="UNVERIFIABLE_SOURCE",
+                title="Unverifiable cited source",
+                severity="high",
+                evidence="One or more cited URLs could not be verified successfully.",
+                recommendation="Use reachable, publicly available citations or disable verification only for trusted private environments.",
+            )
+        )
+
     nodes = [
         TraceNode(id="prompt", label="Prompt", kind="input", detail=prompt or "No prompt recorded."),
         TraceNode(
@@ -138,8 +159,22 @@ def build_trace(
             id="analysis",
             label="Heuristic Analysis",
             kind="analysis",
-            detail=f"Hedges={hedge_hits}, source signals={source_hits}, bias markers={bias_hits}",
+            detail=(
+                f"Hedges={hedge_hits}, source signals={source_hits}, bias markers={bias_hits}, "
+                f"reachable sources={reachable_sources}, problematic sources={problematic_sources}"
+            ),
             score=confidence,
+        ),
+        TraceNode(
+            id="evidence",
+            label="Evidence Verification",
+            kind="analysis",
+            detail=(
+                "No cited URLs detected."
+                if not evidence_checks
+                else f"Verified {len(evidence_checks)} cited URLs: {reachable_sources} reachable, {problematic_sources} problematic."
+            ),
+            score=1.0 if evidence_checks and not problematic_sources else (0.4 if problematic_sources else None),
         ),
         TraceNode(
             id="output",
@@ -166,6 +201,7 @@ def build_trace(
         confidence_score=confidence,
         bias_flags=bias_flags,
         hallucination_flags=hallucination_flags,
+        evidence_checks=list(evidence_checks or []),
         provenance=provenance,
         nodes=nodes,
         summary=summary,

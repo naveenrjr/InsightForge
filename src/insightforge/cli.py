@@ -17,6 +17,7 @@ from .redaction import apply_redaction
 from .renderer import write_html, write_json
 from .store import index_trace, load_trace, load_registry
 from .updater import maybe_get_update_message
+from .verifier import verify_output_sources
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -135,16 +136,20 @@ def run_wrap(args: argparse.Namespace) -> int:
     app_config = load_config()
     command = shlex.split(args.cmd)
     completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    stdout = _cap_output(completed.stdout, app_config.policy.max_output_chars)
+    stderr = _cap_output(completed.stderr, app_config.policy.max_output_chars)
+    evidence_checks = verify_output_sources(stdout, app_config.verification)
 
     trace = build_trace(
         prompt=args.prompt,
         command=command,
         model_hint=args.model,
         provider="shell",
-        stdout=_cap_output(completed.stdout, app_config.policy.max_output_chars),
-        stderr=_cap_output(completed.stderr, app_config.policy.max_output_chars),
+        stdout=stdout,
+        stderr=stderr,
         exit_code=completed.returncode,
         metadata={"mode": "wrapped shell command"},
+        evidence_checks=evidence_checks,
     )
     trace = _finalize_trace(trace, app_config)
 
@@ -169,6 +174,9 @@ def run_ask(args: argparse.Namespace) -> int:
         exit_code = 1
         metadata = {"transport": "provider call failed"}
         provenance_notes = []
+    stdout = _cap_output(stdout, app_config.policy.max_output_chars)
+    stderr = _cap_output(stderr, app_config.policy.max_output_chars)
+    evidence_checks = verify_output_sources(stdout, app_config.verification)
 
     trace = build_trace(
         prompt=args.prompt,
@@ -176,11 +184,12 @@ def run_ask(args: argparse.Namespace) -> int:
         command=[args.provider, args.model],
         model_hint=args.model,
         provider=args.provider,
-        stdout=_cap_output(stdout, app_config.policy.max_output_chars),
-        stderr=_cap_output(stderr, app_config.policy.max_output_chars),
+        stdout=stdout,
+        stderr=stderr,
         exit_code=exit_code,
         metadata=metadata,
         provenance_notes=provenance_notes,
+        evidence_checks=evidence_checks,
     )
     trace = _finalize_trace(trace, app_config)
 

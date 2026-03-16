@@ -34,6 +34,7 @@ This repository bootstraps the first local MVP:
 - `insightforge schema-version` shows the current SQLite schema version.
 - `insightforge migrate` upgrades local storage to the latest schema version.
 - Evaluates production policies such as minimum confidence, stderr failures, source requirements, and blocked absolute language.
+- Verifies cited URLs with bounded fetches and records structured evidence status.
 - Redacts common secrets and emails before traces are persisted.
 - Stores trace metadata and payloads in SQLite for durable retrieval.
 - Captures prompt, stdout, stderr, exit status, and basic provenance hints.
@@ -41,6 +42,36 @@ This repository bootstraps the first local MVP:
 - Emits both a machine-readable JSON trace and a polished HTML "insight map".
 
 It is intentionally simple. The point is to prove the workflow before building provider adapters, policy packs, and team-grade compliance pipelines.
+
+## Feature Map
+
+Current build status:
+
+- [x] Local CLI install with `insightforge` entrypoint
+- [x] `wrap` command for shell-based AI trace capture
+- [x] `ask` command for provider-native runs
+- [x] HTML and JSON trace artifacts
+- [x] SQLite-backed local trace registry
+- [x] Trace diffing across runs
+- [x] Policy engine with pass/fail verdicts
+- [x] Redaction before persistence
+- [x] Schema versioning and migration commands
+- [x] CI on push and pull request
+- [x] Release automation to PyPI via Trusted Publishing
+- [x] CLI update notifications
+- [x] First-run bootstrap via `insightforge init`
+- [x] URL extraction and evidence verification
+- [x] Verifiable-source policy enforcement
+
+Next high-value items:
+
+- [ ] Claim-to-source support checking, not just URL reachability
+- [ ] OpenAI and Anthropic SDK middleware integrations
+- [ ] Search and filter commands for local trace history
+- [ ] Export formats for audit/compliance workflows
+- [ ] VS Code extension
+- [ ] Browser/chatgpt.com capture path
+- [ ] Hosted team audit dashboard
 
 ## Quickstart
 
@@ -103,6 +134,13 @@ insightforge init
 
 That writes a starter `.insightforge.toml` into the current directory using the same strict demo defaults documented in this repo.
 
+Evidence verification:
+
+- URLs cited in model output are extracted and verified with bounded HTTP fetches.
+- Private and local hosts are blocked by default for safety.
+- Verified source metadata is stored in the trace and rendered in the HTML report.
+- `policy.require_verifiable_sources` can enforce at least one reachable citation.
+
 Comparison workflow:
 
 ```bash
@@ -150,12 +188,16 @@ The checked-in defaults are intentionally strict for factual audit demos:
 
 - `policy.min_confidence = 0.85`
 - `policy.require_sources = true`
+- `policy.require_verifiable_sources = true`
 - `policy.fail_on_stderr = true`
 - `policy.block_absolute_language = true`
 
 Other knobs:
 
 - `policy.max_output_chars`
+- `verification.timeout_seconds`
+- `verification.max_urls`
+- `verification.allow_private_hosts`
 - `redaction.enabled`
 - `storage.sqlite_path`
 - `updates.enabled`

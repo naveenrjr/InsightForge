@@ -27,13 +27,30 @@ def evaluate_policies(trace: TraceRecord, config: PolicyConfig) -> tuple[list[Po
         )
 
     if config.require_sources:
-        has_source = any("source" in item.lower() or "citation" in item.lower() for item in trace.provenance)
+        has_source = bool(trace.evidence_checks) or any(
+            "source" in item.lower() or "citation" in item.lower() for item in trace.provenance
+        )
         results.append(
             PolicyResult(
                 policy_id="require_sources",
                 status="pass" if has_source else "fail",
                 severity="high",
                 message="Trace contains source provenance." if has_source else "Trace lacks required source provenance.",
+            )
+        )
+
+    if config.require_verifiable_sources:
+        has_verifiable_source = any(item.status == "reachable" for item in trace.evidence_checks)
+        results.append(
+            PolicyResult(
+                policy_id="require_verifiable_sources",
+                status="pass" if has_verifiable_source else "fail",
+                severity="high",
+                message=(
+                    "Trace contains at least one verified reachable source."
+                    if has_verifiable_source
+                    else "Trace lacks a verifiable reachable source."
+                ),
             )
         )
 

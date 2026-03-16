@@ -4,7 +4,7 @@ import re
 from dataclasses import replace
 
 from .config import RedactionConfig
-from .models import RiskFlag, TraceNode, TraceRecord
+from .models import EvidenceCheck, RiskFlag, TraceNode, TraceRecord
 
 
 def apply_redaction(trace: TraceRecord, config: RedactionConfig) -> TraceRecord:
@@ -27,6 +27,7 @@ def apply_redaction(trace: TraceRecord, config: RedactionConfig) -> TraceRecord:
         )
         for node in trace.nodes
     ]
+    redacted_evidence = [_redact_evidence(item, scrub) for item in trace.evidence_checks]
     redacted_bias = [_redact_flag(flag, scrub) for flag in trace.bias_flags]
     redacted_hallucination = [_redact_flag(flag, scrub) for flag in trace.hallucination_flags]
 
@@ -40,6 +41,7 @@ def apply_redaction(trace: TraceRecord, config: RedactionConfig) -> TraceRecord:
         metadata={key: scrub(value) for key, value in trace.metadata.items()},
         provenance=[scrub(item) for item in trace.provenance],
         nodes=redacted_nodes,
+        evidence_checks=redacted_evidence,
         bias_flags=redacted_bias,
         hallucination_flags=redacted_hallucination,
     )
@@ -52,4 +54,17 @@ def _redact_flag(flag: RiskFlag, scrub) -> RiskFlag:
         severity=flag.severity,
         evidence=scrub(flag.evidence),
         recommendation=scrub(flag.recommendation),
+    )
+
+
+def _redact_evidence(item: EvidenceCheck, scrub) -> EvidenceCheck:
+    return EvidenceCheck(
+        url=scrub(item.url),
+        status=item.status,
+        category=item.category,
+        detail=scrub(item.detail),
+        http_status=item.http_status,
+        content_type=scrub(item.content_type),
+        title=scrub(item.title),
+        snippet=scrub(item.snippet),
     )

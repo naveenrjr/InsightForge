@@ -4,15 +4,18 @@ import tempfile
 import unittest
 from argparse import Namespace
 from pathlib import Path
+from urllib.error import URLError
 
 from insightforge.analyzer import build_trace
 from insightforge.cli import run_init
 from insightforge.config import AppConfig, PolicyConfig, RedactionConfig, StorageConfig
 from insightforge.migrations import CURRENT_DB_SCHEMA_VERSION, get_schema_version, migrate_storage
+from insightforge.models import EvidenceCheck
 from insightforge.policy import evaluate_policies
 from insightforge.redaction import apply_redaction
 from insightforge.store import index_trace, load_registry, load_trace
 from insightforge.updater import is_newer_version
+from insightforge.verifier import VerificationConfig, extract_urls, verify_output_sources
 
 
 class ProductionMvpTests(unittest.TestCase):
@@ -56,6 +59,35 @@ class ProductionMvpTests(unittest.TestCase):
         self.assertEqual("fail", overall_status)
         self.assertTrue(any(result.policy_id == "min_confidence" and result.status == "fail" for result in results))
         self.assertTrue(any(result.policy_id == "fail_on_stderr" and result.status == "fail" for result in results))
+
+    def test_policy_evaluation_requires_verifiable_source(self) -> None:
+        trace = build_trace(
+            prompt="Answer with a source",
+            command=["mock"],
+            model_hint="demo-model",
+            provider="mock",
+            stdout="Source: https://example.com/report",
+            stderr="",
+            exit_code=0,
+            evidence_checks=[
+                EvidenceCheck(
+                    url="https://example.com/report",
+                    status="reachable",
+                    category="http",
+                    detail="Source was fetched successfully.",
+                    http_status=200,
+                )
+            ],
+        )
+        results, overall_status = evaluate_policies(
+            trace,
+            PolicyConfig(require_sources=True, require_verifiable_sources=True),
+        )
+
+        self.assertEqual("pass", overall_status)
+        self.assertTrue(
+            any(result.policy_id == "require_verifiable_sources" and result.status == "pass" for result in results)
+        )
 
     def test_sqlite_index_and_load_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -146,6 +178,36 @@ class ProductionMvpTests(unittest.TestCase):
         self.assertEqual(0, result)
         self.assertTrue(exists)
         self.assertIn("min_confidence = 0.85", contents)
+        self.assertIn("require_verifiable_sources = true", contents)
+
+    def test_extract_urls_normalizes_trailing_punctuation(self) -> None:
+        urls = extract_urls("See https://example.com/report, and https://example.com/report.")
+        self.assertEqual(["https://example.com/report"], urls)
+
+    def test_verify_output_sources_blocks_private_hosts(self) -> None:
+        evidence = verify_output_sources(
+            "Source: http://127.0.0.1/internal",
+            VerificationConfig(),
+        )
+        self.assertEqual(1, len(evidence))
+        self.assertEqual("blocked", evidence[0].status)
+
+    def test_verify_output_sources_reports_reachable_and_unreachable(self) -> None:
+        def fetcher(url: str, timeout_seconds: int, max_bytes: int) -> tuple[int, str, str]:
+            if "good" in url:
+                return 200, "text/html", "<html><title>Trusted Report</title><body>Evidence body</body></html>"
+            raise URLError("dns failure")
+
+        evidence = verify_output_sources(
+            "Sources: https://good.example/report and https://bad.example/report",
+            VerificationConfig(),
+            fetcher=fetcher,
+        )
+
+        self.assertEqual(2, len(evidence))
+        self.assertEqual("reachable", evidence[0].status)
+        self.assertEqual("Trusted Report", evidence[0].title)
+        self.assertEqual("unreachable", evidence[1].status)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,8 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .verifier import VerificationConfig
+
 
 DEFAULT_CONFIG_PATH = Path(".insightforge.toml")
 
@@ -12,6 +14,7 @@ DEFAULT_CONFIG_PATH = Path(".insightforge.toml")
 class PolicyConfig:
     min_confidence: float = 0.65
     require_sources: bool = False
+    require_verifiable_sources: bool = False
     fail_on_stderr: bool = True
     block_absolute_language: bool = False
     max_output_chars: int = 20000
@@ -47,6 +50,7 @@ class UpdateConfig:
 @dataclass(slots=True)
 class AppConfig:
     policy: PolicyConfig = field(default_factory=PolicyConfig)
+    verification: VerificationConfig = field(default_factory=VerificationConfig)
     redaction: RedactionConfig = field(default_factory=RedactionConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     updates: UpdateConfig = field(default_factory=UpdateConfig)
@@ -61,6 +65,7 @@ def load_config(cwd: Path | None = None) -> AppConfig:
 
     payload = tomllib.loads(path.read_text(encoding="utf-8"))
     policy = payload.get("policy", {})
+    verification = payload.get("verification", {})
     redaction = payload.get("redaction", {})
     storage = payload.get("storage", {})
     updates = payload.get("updates", {})
@@ -68,11 +73,25 @@ def load_config(cwd: Path | None = None) -> AppConfig:
     config.policy = PolicyConfig(
         min_confidence=float(policy.get("min_confidence", config.policy.min_confidence)),
         require_sources=bool(policy.get("require_sources", config.policy.require_sources)),
+        require_verifiable_sources=bool(
+            policy.get("require_verifiable_sources", config.policy.require_verifiable_sources)
+        ),
         fail_on_stderr=bool(policy.get("fail_on_stderr", config.policy.fail_on_stderr)),
         block_absolute_language=bool(
             policy.get("block_absolute_language", config.policy.block_absolute_language)
         ),
         max_output_chars=int(policy.get("max_output_chars", config.policy.max_output_chars)),
+    )
+    config.verification = VerificationConfig(
+        enabled=bool(verification.get("enabled", config.verification.enabled)),
+        timeout_seconds=int(
+            verification.get("timeout_seconds", config.verification.timeout_seconds)
+        ),
+        max_urls=int(verification.get("max_urls", config.verification.max_urls)),
+        max_bytes=int(verification.get("max_bytes", config.verification.max_bytes)),
+        allow_private_hosts=bool(
+            verification.get("allow_private_hosts", config.verification.allow_private_hosts)
+        ),
     )
     config.redaction = RedactionConfig(
         enabled=bool(redaction.get("enabled", config.redaction.enabled)),

@@ -78,6 +78,26 @@ def _render_policy_results(trace: TraceRecord) -> str:
     )
 
 
+def _render_evidence(trace: TraceRecord) -> str:
+    if not trace.evidence_checks:
+        return "<p class='empty'>No cited URLs were detected for verification.</p>"
+    return "".join(
+        (
+            "<article class='node'>"
+            f"<div class='node-kind'>{html.escape(item.status)}</div>"
+            f"<h3>{html.escape(item.url)}</h3>"
+            f"<p>{html.escape(item.detail)}</p>"
+            f"<p><strong>Category:</strong> {html.escape(item.category)}</p>"
+            f"<p><strong>HTTP:</strong> {html.escape(str(item.http_status) if item.http_status is not None else 'n/a')}</p>"
+            f"<p><strong>Content-Type:</strong> {html.escape(item.content_type or 'n/a')}</p>"
+            f"<p><strong>Title:</strong> {html.escape(item.title or 'n/a')}</p>"
+            f"<p><strong>Snippet:</strong> {html.escape(item.snippet or 'n/a')}</p>"
+            "</article>"
+        )
+        for item in trace.evidence_checks
+    )
+
+
 def write_html(trace: TraceRecord, destination: Path) -> None:
     payload = html.escape(json.dumps(trace.to_dict(), indent=2))
     document = f"""<!DOCTYPE html>
@@ -231,13 +251,19 @@ def write_html(trace: TraceRecord, destination: Path) -> None:
         <div class="stack">{_render_policy_results(trace)}</div>
       </div>
       <div class="panel">
+        <h2>Evidence Check</h2>
+        <div class="stack">{_render_evidence(trace)}</div>
+      </div>
+    </section>
+    <section class="grid" style="margin-top:20px;">
+      <div class="panel">
         <h2>Provenance</h2>
         <div class="stack">{_render_list_items(trace.provenance)}</div>
       </div>
-    </section>
-    <section class="panel" style="margin-top:20px;">
-      <h2>Metadata</h2>
-      <div class="stack">{_render_metadata(trace)}</div>
+      <div class="panel">
+        <h2>Metadata</h2>
+        <div class="stack">{_render_metadata(trace)}</div>
+      </div>
     </section>
     <section class="panel" style="margin-top:20px;">
       <h2>Raw Trace</h2>
