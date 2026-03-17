@@ -62,10 +62,11 @@ Current build status:
 - [x] First-run bootstrap via `insightforge init`
 - [x] URL extraction and evidence verification
 - [x] Verifiable-source policy enforcement
+- [x] Claim-to-source support checking on fetched source snippets
 
 Next high-value items:
 
-- [ ] Claim-to-source support checking, not just URL reachability
+- [ ] Stronger semantic claim validation and contradiction detection
 - [ ] OpenAI and Anthropic SDK middleware integrations
 - [ ] Search and filter commands for local trace history
 - [ ] Export formats for audit/compliance workflows
@@ -139,7 +140,9 @@ Evidence verification:
 - URLs cited in model output are extracted and verified with bounded HTTP fetches.
 - Private and local hosts are blocked by default for safety.
 - Verified source metadata is stored in the trace and rendered in the HTML report.
+- Reachable sources are also checked for simple claim support against extracted output claims.
 - `policy.require_verifiable_sources` can enforce at least one reachable citation.
+- `policy.require_supported_sources` can enforce at least one citation that appears to support a concrete claim.
 
 Comparison workflow:
 
@@ -189,6 +192,7 @@ The checked-in defaults are intentionally strict for factual audit demos:
 - `policy.min_confidence = 0.85`
 - `policy.require_sources = true`
 - `policy.require_verifiable_sources = true`
+- `policy.require_supported_sources = false`
 - `policy.fail_on_stderr = true`
 - `policy.block_absolute_language = true`
 
