@@ -56,6 +56,12 @@ def _evidence_metrics(evidence_checks: Sequence[EvidenceCheck]) -> tuple[int, in
     return reachable, problematic
 
 
+def _support_metrics(evidence_checks: Sequence[EvidenceCheck]) -> tuple[int, int]:
+    supported = sum(1 for item in evidence_checks if item.support_status == "supported")
+    unsupported = sum(1 for item in evidence_checks if item.support_status == "insufficient_evidence")
+    return supported, unsupported
+
+
 def build_trace(
     *,
     prompt: str,
@@ -77,6 +83,7 @@ def build_trace(
     stderr_penalty = 0.2 if stderr.strip() else 0.0
     empty_penalty = 0.15 if not stdout.strip() else 0.0
     reachable_sources, problematic_sources = _evidence_metrics(evidence_checks or [])
+    supported_sources, unsupported_sources = _support_metrics(evidence_checks or [])
 
     confidence = 0.72
     confidence -= min(0.24, hedge_hits * 0.04)
@@ -84,7 +91,9 @@ def build_trace(
     confidence -= stderr_penalty + empty_penalty
     confidence += min(0.18, source_hits * 0.06)
     confidence += min(0.12, reachable_sources * 0.06)
+    confidence += min(0.12, supported_sources * 0.08)
     confidence -= min(0.18, problematic_sources * 0.06)
+    confidence -= min(0.16, unsupported_sources * 0.08)
     confidence = max(0.05, min(0.99, round(confidence, 2)))
 
     bias_flags: list[RiskFlag] = []
@@ -140,6 +149,17 @@ def build_trace(
             )
         )
 
+    if unsupported_sources:
+        hallucination_flags.append(
+            RiskFlag(
+                code="UNSUPPORTED_CLAIM",
+                title="Source does not clearly support the claim",
+                severity="high",
+                evidence="A cited source was reachable, but the extracted snippet did not align with the model's claim.",
+                recommendation="Use citations that directly support the claim or narrow the answer to what the evidence actually states.",
+            )
+        )
+
     nodes = [
         TraceNode(id="prompt", label="Prompt", kind="input", detail=prompt or "No prompt recorded."),
         TraceNode(
@@ -161,7 +181,8 @@ def build_trace(
             kind="analysis",
             detail=(
                 f"Hedges={hedge_hits}, source signals={source_hits}, bias markers={bias_hits}, "
-                f"reachable sources={reachable_sources}, problematic sources={problematic_sources}"
+                f"reachable sources={reachable_sources}, supported sources={supported_sources}, "
+                f"problematic sources={problematic_sources}"
             ),
             score=confidence,
         ),
@@ -172,9 +193,16 @@ def build_trace(
             detail=(
                 "No cited URLs detected."
                 if not evidence_checks
-                else f"Verified {len(evidence_checks)} cited URLs: {reachable_sources} reachable, {problematic_sources} problematic."
+                else (
+                    f"Verified {len(evidence_checks)} cited URLs: {reachable_sources} reachable, "
+                    f"{supported_sources} claim-supporting, {problematic_sources} problematic."
+                )
             ),
-            score=1.0 if evidence_checks and not problematic_sources else (0.4 if problematic_sources else None),
+            score=(
+                1.0
+                if evidence_checks and not problematic_sources and not unsupported_sources
+                else (0.4 if problematic_sources or unsupported_sources else None)
+            ),
         ),
         TraceNode(
             id="output",

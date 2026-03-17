@@ -15,6 +15,7 @@ class PolicyConfig:
     min_confidence: float = 0.65
     require_sources: bool = False
     require_verifiable_sources: bool = False
+    require_supported_sources: bool = False
     fail_on_stderr: bool = True
     block_absolute_language: bool = False
     max_output_chars: int = 20000
@@ -75,6 +76,9 @@ def load_config(cwd: Path | None = None) -> AppConfig:
         require_sources=bool(policy.get("require_sources", config.policy.require_sources)),
         require_verifiable_sources=bool(
             policy.get("require_verifiable_sources", config.policy.require_verifiable_sources)
+        ),
+        require_supported_sources=bool(
+            policy.get("require_supported_sources", config.policy.require_supported_sources)
         ),
         fail_on_stderr=bool(policy.get("fail_on_stderr", config.policy.fail_on_stderr)),
         block_absolute_language=bool(

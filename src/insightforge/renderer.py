@@ -92,6 +92,10 @@ def _render_evidence(trace: TraceRecord) -> str:
             f"<p><strong>Content-Type:</strong> {html.escape(item.content_type or 'n/a')}</p>"
             f"<p><strong>Title:</strong> {html.escape(item.title or 'n/a')}</p>"
             f"<p><strong>Snippet:</strong> {html.escape(item.snippet or 'n/a')}</p>"
+            f"<p><strong>Support:</strong> {html.escape(item.support_status or 'n/a')}</p>"
+            f"<p><strong>Matched claim:</strong> {html.escape(item.matched_claim or 'n/a')}</p>"
+            f"<p><strong>Support score:</strong> {item.support_score:.2f}</p>"
+            f"<p><strong>Support detail:</strong> {html.escape(item.support_detail or 'n/a')}</p>"
             "</article>"
         )
         for item in trace.evidence_checks

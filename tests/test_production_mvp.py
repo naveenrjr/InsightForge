@@ -8,14 +8,14 @@ from urllib.error import URLError
 
 from insightforge.analyzer import build_trace
 from insightforge.cli import run_init
-from insightforge.config import AppConfig, PolicyConfig, RedactionConfig, StorageConfig
+from insightforge.config import PolicyConfig, RedactionConfig, StorageConfig
 from insightforge.migrations import CURRENT_DB_SCHEMA_VERSION, get_schema_version, migrate_storage
 from insightforge.models import EvidenceCheck
 from insightforge.policy import evaluate_policies
 from insightforge.redaction import apply_redaction
 from insightforge.store import index_trace, load_registry, load_trace
 from insightforge.updater import is_newer_version
-from insightforge.verifier import VerificationConfig, extract_urls, verify_output_sources
+from insightforge.verifier import VerificationConfig, extract_claims, extract_urls, verify_output_sources
 
 
 class ProductionMvpTests(unittest.TestCase):
@@ -89,6 +89,41 @@ class ProductionMvpTests(unittest.TestCase):
             any(result.policy_id == "require_verifiable_sources" and result.status == "pass" for result in results)
         )
 
+    def test_policy_evaluation_requires_supported_source(self) -> None:
+        trace = build_trace(
+            prompt="Answer with a supported source",
+            command=["mock"],
+            model_hint="demo-model",
+            provider="mock",
+            stdout="SQLite stores data in a local file and can be embedded into applications.",
+            stderr="",
+            exit_code=0,
+            evidence_checks=[
+                EvidenceCheck(
+                    url="https://example.com/sqlite",
+                    status="reachable",
+                    category="http",
+                    detail="Source was fetched successfully.",
+                    http_status=200,
+                    title="SQLite Overview",
+                    snippet="SQLite is a self-contained embedded database engine stored in a local file.",
+                    support_status="supported",
+                    support_detail="Source snippet overlaps strongly with a concrete claim from the output.",
+                    matched_claim="SQLite stores data in a local file and can be embedded into applications.",
+                    support_score=0.71,
+                )
+            ],
+        )
+        results, overall_status = evaluate_policies(
+            trace,
+            PolicyConfig(require_sources=True, require_verifiable_sources=True, require_supported_sources=True),
+        )
+
+        self.assertEqual("pass", overall_status)
+        self.assertTrue(
+            any(result.policy_id == "require_supported_sources" and result.status == "pass" for result in results)
+        )
+
     def test_sqlite_index_and_load_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cwd = Path(tmp)
@@ -103,6 +138,20 @@ class ProductionMvpTests(unittest.TestCase):
                 stdout="output",
                 stderr="",
                 exit_code=0,
+                evidence_checks=[
+                    EvidenceCheck(
+                        url="https://example.com/report",
+                        status="reachable",
+                        category="http",
+                        detail="Source was fetched successfully.",
+                        title="Report",
+                        snippet="The report supports the captured statement.",
+                        support_status="supported",
+                        support_detail="Source snippet overlaps strongly with a concrete claim from the output.",
+                        matched_claim="Supported captured statement.",
+                        support_score=0.66,
+                    )
+                ],
             )
             trace.overall_status = "pass"
             json_path.write_text("{}", encoding="utf-8")
@@ -123,6 +172,8 @@ class ProductionMvpTests(unittest.TestCase):
             self.assertEqual(trace.trace_id, entries[0]["trace_id"])
             self.assertEqual(trace.trace_id, loaded.trace_id)
             self.assertEqual("output", loaded.stdout)
+            self.assertEqual("supported", loaded.evidence_checks[0].support_status)
+            self.assertEqual(0.66, loaded.evidence_checks[0].support_score)
 
     def test_migrate_legacy_database_to_current_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -184,6 +235,17 @@ class ProductionMvpTests(unittest.TestCase):
         urls = extract_urls("See https://example.com/report, and https://example.com/report.")
         self.assertEqual(["https://example.com/report"], urls)
 
+    def test_extract_claims_skips_urls_and_short_fragments(self) -> None:
+        claims = extract_claims(
+            "SQLite can run as an embedded database engine inside local applications. "
+            "See https://example.com/sqlite for more. "
+            "Fast and simple."
+        )
+        self.assertEqual(
+            ["SQLite can run as an embedded database engine inside local applications."],
+            claims,
+        )
+
     def test_verify_output_sources_blocks_private_hosts(self) -> None:
         evidence = verify_output_sources(
             "Source: http://127.0.0.1/internal",
@@ -208,6 +270,104 @@ class ProductionMvpTests(unittest.TestCase):
         self.assertEqual("reachable", evidence[0].status)
         self.assertEqual("Trusted Report", evidence[0].title)
         self.assertEqual("unreachable", evidence[1].status)
+
+    def test_verify_output_sources_marks_supported_claims(self) -> None:
+        def fetcher(url: str, timeout_seconds: int, max_bytes: int) -> tuple[int, str, str]:
+            return (
+                200,
+                "text/html",
+                (
+                    "<html><title>SQLite Overview</title><body>"
+                    "SQLite is an embedded database engine that stores data in a local file."
+                    "</body></html>"
+                ),
+            )
+
+        evidence = verify_output_sources(
+            (
+                "SQLite stores data in a local file and can be embedded into applications. "
+                "Source: https://example.com/sqlite"
+            ),
+            VerificationConfig(),
+            fetcher=fetcher,
+        )
+
+        self.assertEqual(1, len(evidence))
+        self.assertEqual("supported", evidence[0].support_status)
+        self.assertGreaterEqual(evidence[0].support_score, 0.55)
+        self.assertIn("SQLite stores data in a local file", evidence[0].matched_claim)
+
+    def test_verify_output_sources_marks_insufficient_evidence(self) -> None:
+        def fetcher(url: str, timeout_seconds: int, max_bytes: int) -> tuple[int, str, str]:
+            return (
+                200,
+                "text/html",
+                (
+                    "<html><title>Weather Report</title><body>"
+                    "A storm system is moving across the coast this weekend."
+                    "</body></html>"
+                ),
+            )
+
+        evidence = verify_output_sources(
+            (
+                "SQLite stores data in a local file and can be embedded into applications. "
+                "Source: https://example.com/weather"
+            ),
+            VerificationConfig(),
+            fetcher=fetcher,
+        )
+
+        self.assertEqual(1, len(evidence))
+        self.assertEqual("insufficient_evidence", evidence[0].support_status)
+        self.assertEqual(0.0, evidence[0].support_score)
+
+    def test_build_trace_flags_unsupported_claims(self) -> None:
+        supported = build_trace(
+            prompt="Answer with support",
+            command=["mock"],
+            model_hint="demo-model",
+            provider="mock",
+            stdout="SQLite stores data in a local file and can be embedded into applications.",
+            stderr="",
+            exit_code=0,
+            evidence_checks=[
+                EvidenceCheck(
+                    url="https://example.com/sqlite",
+                    status="reachable",
+                    category="http",
+                    detail="Source was fetched successfully.",
+                    support_status="supported",
+                    support_detail="Source snippet overlaps strongly with a concrete claim from the output.",
+                    matched_claim="SQLite stores data in a local file and can be embedded into applications.",
+                    support_score=0.71,
+                )
+            ],
+        )
+        unsupported = build_trace(
+            prompt="Answer with support",
+            command=["mock"],
+            model_hint="demo-model",
+            provider="mock",
+            stdout="SQLite stores data in a local file and can be embedded into applications.",
+            stderr="",
+            exit_code=0,
+            evidence_checks=[
+                EvidenceCheck(
+                    url="https://example.com/weather",
+                    status="reachable",
+                    category="http",
+                    detail="Source was fetched successfully.",
+                    support_status="insufficient_evidence",
+                    support_detail="Source snippet does not clearly support any extracted claim.",
+                    matched_claim="SQLite stores data in a local file and can be embedded into applications.",
+                    support_score=0.0,
+                )
+            ],
+        )
+
+        self.assertGreater(supported.confidence_score, unsupported.confidence_score)
+        self.assertTrue(any(flag.code == "UNSUPPORTED_CLAIM" for flag in unsupported.hallucination_flags))
 
 
 if __name__ == "__main__":

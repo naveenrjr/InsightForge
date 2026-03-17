@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from hashlib import sha1
 
 
-TRACE_SCHEMA_VERSION = "0.3"
+TRACE_SCHEMA_VERSION = "0.4"
 
 
 def utc_now_iso() -> str:
@@ -53,6 +53,10 @@ class EvidenceCheck:
     content_type: str = ""
     title: str = ""
     snippet: str = ""
+    support_status: str = ""
+    support_detail: str = ""
+    matched_claim: str = ""
+    support_score: float = 0.0
 
 
 @dataclass(slots=True)

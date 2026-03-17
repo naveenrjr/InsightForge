@@ -5,6 +5,7 @@ DEFAULT_CONFIG_TEMPLATE = """[policy]
 min_confidence = 0.85
 require_sources = true
 require_verifiable_sources = true
+require_supported_sources = false
 fail_on_stderr = true
 block_absolute_language = true
 max_output_chars = 20000

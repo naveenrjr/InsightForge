@@ -54,6 +54,21 @@ def evaluate_policies(trace: TraceRecord, config: PolicyConfig) -> tuple[list[Po
             )
         )
 
+    if config.require_supported_sources:
+        has_supported_source = any(item.support_status == "supported" for item in trace.evidence_checks)
+        results.append(
+            PolicyResult(
+                policy_id="require_supported_sources",
+                status="pass" if has_supported_source else "fail",
+                severity="high",
+                message=(
+                    "Trace contains at least one source that appears to support a concrete claim."
+                    if has_supported_source
+                    else "Trace lacks a source that clearly supports an extracted claim."
+                ),
+            )
+        )
+
     if config.fail_on_stderr:
         clean = not trace.stderr.strip()
         results.append(

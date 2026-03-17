@@ -16,6 +16,41 @@ URL_PATTERN = re.compile(r"https?://[^\s<>()\"']+")
 TITLE_PATTERN = re.compile(r"<title[^>]*>(.*?)</title>", flags=re.IGNORECASE | re.DOTALL)
 TAG_PATTERN = re.compile(r"<[^>]+>")
 WHITESPACE_PATTERN = re.compile(r"\s+")
+SENTENCE_PATTERN = re.compile(r"(?<=[.!?])\s+|\n+")
+WORD_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9'-]*")
+STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "but",
+    "by",
+    "for",
+    "from",
+    "how",
+    "if",
+    "in",
+    "into",
+    "is",
+    "it",
+    "its",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "their",
+    "there",
+    "this",
+    "to",
+    "was",
+    "were",
+    "which",
+    "with",
+}
 
 
 @dataclass(slots=True)
@@ -125,7 +160,7 @@ def verify_output_sources(
             )
         )
 
-    return evidence_checks
+    return analyze_claim_support(text, evidence_checks)
 
 
 def extract_urls(text: str) -> list[str]:
@@ -150,6 +185,86 @@ def extract_title(body: str) -> str:
 def extract_snippet(body: str) -> str:
     text = html.unescape(TAG_PATTERN.sub(" ", body))
     return WHITESPACE_PATTERN.sub(" ", text).strip()[:280]
+
+
+def analyze_claim_support(text: str, evidence_checks: list[EvidenceCheck]) -> list[EvidenceCheck]:
+    claims = extract_claims(text)
+    if not claims:
+        for item in evidence_checks:
+            if item.status == "reachable":
+                item.support_status = "not_applicable"
+                item.support_detail = "No concrete claim sentence was extracted for source matching."
+        return evidence_checks
+
+    for item in evidence_checks:
+        if item.status != "reachable":
+            item.support_status = "unverified"
+            item.support_detail = "Source support could not be checked because the URL was not reachable."
+            continue
+
+        matched_claim, score = _best_claim_match(claims, " ".join(part for part in (item.title, item.snippet) if part))
+        item.matched_claim = matched_claim
+        item.support_score = score
+        if score >= 0.55:
+            item.support_status = "supported"
+            item.support_detail = "Source snippet overlaps strongly with a concrete claim from the output."
+        elif score >= 0.3:
+            item.support_status = "weak_support"
+            item.support_detail = "Source snippet partially overlaps with a claim, but support is incomplete."
+        else:
+            item.support_status = "insufficient_evidence"
+            item.support_detail = "Source snippet does not clearly support any extracted claim."
+
+    return evidence_checks
+
+
+def extract_claims(text: str, limit: int = 3) -> list[str]:
+    claims: list[str] = []
+    seen: set[str] = set()
+    for chunk in SENTENCE_PATTERN.split(text):
+        sentence = chunk.strip()
+        if not sentence or "http://" in sentence or "https://" in sentence:
+            continue
+        if len(sentence) < 40:
+            continue
+        tokens = _content_terms(sentence)
+        if len(tokens) < 4:
+            continue
+        normalized = sentence.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        claims.append(sentence)
+        if len(claims) >= limit:
+            break
+    return claims
+
+
+def _best_claim_match(claims: list[str], source_text: str) -> tuple[str, float]:
+    best_claim = ""
+    best_score = 0.0
+    source_terms = _content_terms(source_text)
+    if not source_terms:
+        return best_claim, best_score
+
+    for claim in claims:
+        claim_terms = _content_terms(claim)
+        if not claim_terms:
+            continue
+        overlap = claim_terms & source_terms
+        score = len(overlap) / len(claim_terms)
+        if score > best_score:
+            best_claim = claim
+            best_score = round(score, 2)
+    return best_claim, best_score
+
+
+def _content_terms(text: str) -> set[str]:
+    return {
+        token.lower()
+        for token in WORD_PATTERN.findall(text)
+        if len(token) >= 4 and token.lower() not in STOPWORDS
+    }
 
 
 def _default_fetcher(url: str, timeout_seconds: int, max_bytes: int) -> tuple[int, str, str]:
