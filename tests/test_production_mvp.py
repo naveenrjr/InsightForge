@@ -13,7 +13,7 @@ from insightforge.migrations import CURRENT_DB_SCHEMA_VERSION, get_schema_versio
 from insightforge.models import EvidenceCheck
 from insightforge.policy import evaluate_policies
 from insightforge.redaction import apply_redaction
-from insightforge.store import index_trace, load_registry, load_trace
+from insightforge.store import TraceQuery, index_trace, load_registry, load_trace, search_registry
 from insightforge.updater import is_newer_version
 from insightforge.verifier import VerificationConfig, extract_claims, extract_urls, verify_output_sources
 
@@ -174,6 +174,105 @@ class ProductionMvpTests(unittest.TestCase):
             self.assertEqual("output", loaded.stdout)
             self.assertEqual("supported", loaded.evidence_checks[0].support_status)
             self.assertEqual(0.66, loaded.evidence_checks[0].support_score)
+
+    def test_search_registry_filters_by_provider_status_and_text(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            config = StorageConfig(sqlite_path=str(cwd / ".insightforge" / "traces.db"))
+            old_cwd = Path.cwd()
+            try:
+                import os
+
+                os.chdir(cwd)
+                first = build_trace(
+                    prompt="Investigate NASA Mars claim",
+                    command=["openai"],
+                    model_hint="gpt-4.1-mini",
+                    provider="openai",
+                    stdout="NASA claim output",
+                    stderr="",
+                    exit_code=0,
+                )
+                second = build_trace(
+                    prompt="Review Anthropic safety note",
+                    command=["anthropic"],
+                    model_hint="claude-sonnet",
+                    provider="anthropic",
+                    stdout="Safety note output",
+                    stderr="",
+                    exit_code=0,
+                )
+                first.overall_status = "fail"
+                second.overall_status = "pass"
+                (cwd / "one.json").write_text("{}", encoding="utf-8")
+                (cwd / "one.html").write_text("<html></html>", encoding="utf-8")
+                (cwd / "two.json").write_text("{}", encoding="utf-8")
+                (cwd / "two.html").write_text("<html></html>", encoding="utf-8")
+                index_trace(first, cwd / "one.json", cwd / "one.html", config)
+                index_trace(second, cwd / "two.json", cwd / "two.html", config)
+
+                provider_results = search_registry(config, TraceQuery(provider="openai", limit=10))
+                status_results = search_registry(config, TraceQuery(overall_status="pass", limit=10))
+                text_results = search_registry(config, TraceQuery(text="NASA", limit=10))
+            finally:
+                os.chdir(old_cwd)
+
+        self.assertEqual(1, len(provider_results))
+        self.assertEqual("openai", provider_results[0]["provider"])
+        self.assertEqual(1, len(status_results))
+        self.assertEqual("pass", status_results[0]["overall_status"])
+        self.assertEqual(1, len(text_results))
+        self.assertIn("NASA", text_results[0]["prompt"])
+
+    def test_search_registry_filters_by_date_range(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            config = StorageConfig(sqlite_path=str(cwd / ".insightforge" / "traces.db"))
+            old_cwd = Path.cwd()
+            try:
+                import os
+
+                os.chdir(cwd)
+                older = build_trace(
+                    prompt="Older trace",
+                    command=["mock"],
+                    model_hint="demo-model",
+                    provider="mock",
+                    stdout="older",
+                    stderr="",
+                    exit_code=0,
+                )
+                newer = build_trace(
+                    prompt="Newer trace",
+                    command=["mock"],
+                    model_hint="demo-model",
+                    provider="mock",
+                    stdout="newer",
+                    stderr="",
+                    exit_code=0,
+                )
+                older.captured_at = "2026-03-20T10:00:00+00:00"
+                newer.captured_at = "2026-03-23T10:00:00+00:00"
+                older.trace_id = "older12345678"
+                newer.trace_id = "newer12345678"
+                older.overall_status = "pass"
+                newer.overall_status = "pass"
+                (cwd / "older.json").write_text("{}", encoding="utf-8")
+                (cwd / "older.html").write_text("<html></html>", encoding="utf-8")
+                (cwd / "newer.json").write_text("{}", encoding="utf-8")
+                (cwd / "newer.html").write_text("<html></html>", encoding="utf-8")
+                index_trace(older, cwd / "older.json", cwd / "older.html", config)
+                index_trace(newer, cwd / "newer.json", cwd / "newer.html", config)
+
+                filtered = search_registry(
+                    config,
+                    TraceQuery(date_from="2026-03-22T00:00:00+00:00", limit=10),
+                )
+            finally:
+                os.chdir(old_cwd)
+
+        self.assertEqual(1, len(filtered))
+        self.assertEqual("Newer trace", filtered[0]["prompt"])
 
     def test_migrate_legacy_database_to_current_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

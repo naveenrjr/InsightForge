@@ -15,7 +15,7 @@ from .policy import evaluate_policies
 from .providers import ProviderError, get_provider
 from .redaction import apply_redaction
 from .renderer import write_html, write_json
-from .store import index_trace, load_trace, load_registry
+from .store import TraceQuery, index_trace, load_trace, load_registry, search_registry
 from .updater import maybe_get_update_message
 from .verifier import verify_output_sources
 
@@ -57,12 +57,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     list_cmd = subparsers.add_parser("list", help="List indexed traces from the local registry.")
-    list_cmd.add_argument(
-        "--limit",
-        type=int,
-        default=10,
-        help="Maximum number of traces to display",
-    )
+    _add_query_arguments(list_cmd)
+
+    query_cmd = subparsers.add_parser("query", help="Search indexed traces with filters.")
+    _add_query_arguments(query_cmd)
 
     diff = subparsers.add_parser("diff", help="Compare two saved traces by path or trace id.")
     diff.add_argument("before", help="Older trace path or trace id")
@@ -96,6 +94,45 @@ def build_parser() -> argparse.ArgumentParser:
         help="Overwrite an existing config file if one already exists",
     )
     return parser
+
+
+def _add_query_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Maximum number of traces to display",
+    )
+    parser.add_argument(
+        "--provider",
+        default="",
+        help="Filter by provider name, e.g. openai or anthropic",
+    )
+    parser.add_argument(
+        "--model",
+        default="",
+        help="Filter by model name",
+    )
+    parser.add_argument(
+        "--status",
+        default="",
+        help="Filter by overall status: pass or fail",
+    )
+    parser.add_argument(
+        "--text",
+        default="",
+        help="Free-text search across prompts and stored trace payloads",
+    )
+    parser.add_argument(
+        "--date-from",
+        default="",
+        help="Lower bound for captured_at in ISO format, e.g. 2026-03-20 or 2026-03-20T00:00:00",
+    )
+    parser.add_argument(
+        "--date-to",
+        default="",
+        help="Upper bound for captured_at in ISO format, e.g. 2026-03-23 or 2026-03-23T23:59:59",
+    )
 
 
 def _cap_output(value: str, limit: int) -> str:
@@ -200,7 +237,7 @@ def run_ask(args: argparse.Namespace) -> int:
 
 def run_list(args: argparse.Namespace) -> int:
     app_config = load_config()
-    entries = load_registry(app_config.storage, max(1, args.limit))
+    entries = search_registry(app_config.storage, _build_trace_query(args))
     if not entries:
         print("No traces indexed yet.")
         return 0
@@ -212,6 +249,10 @@ def run_list(args: argparse.Namespace) -> int:
             f"score={entry['confidence_score']:.2f} | {entry['json_path']}"
         )
     return 0
+
+
+def run_query(args: argparse.Namespace) -> int:
+    return run_list(args)
 
 
 def run_diff(args: argparse.Namespace) -> int:
@@ -267,6 +308,18 @@ def run_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def _build_trace_query(args: argparse.Namespace) -> TraceQuery:
+    return TraceQuery(
+        limit=max(1, args.limit),
+        provider=args.provider.strip(),
+        model_hint=args.model.strip(),
+        overall_status=args.status.strip(),
+        text=args.text.strip(),
+        date_from=args.date_from.strip(),
+        date_to=args.date_to.strip(),
+    )
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
@@ -282,6 +335,8 @@ def main() -> int:
         return run_ask(args)
     if args.command_name == "list":
         return run_list(args)
+    if args.command_name == "query":
+        return run_query(args)
     if args.command_name == "diff":
         return run_diff(args)
     if args.command_name == "schema-version":

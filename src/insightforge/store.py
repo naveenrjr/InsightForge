@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 
 from .config import StorageConfig
@@ -11,6 +12,17 @@ from .models import EvidenceCheck, PolicyResult, RiskFlag, TraceNode, TraceRecor
 
 REGISTRY_DIR = Path(".insightforge")
 REGISTRY_PATH = REGISTRY_DIR / "registry.json"
+
+
+@dataclass(slots=True)
+class TraceQuery:
+    limit: int | None = None
+    provider: str = ""
+    model_hint: str = ""
+    overall_status: str = ""
+    text: str = ""
+    date_from: str = ""
+    date_to: str = ""
 
 
 def ensure_storage(config: StorageConfig) -> Path:
@@ -59,18 +71,47 @@ def index_trace(trace: TraceRecord, json_path: Path, html_path: Path, config: St
 
 
 def load_registry(config: StorageConfig, limit: int | None = None) -> list[dict]:
+    return search_registry(config, TraceQuery(limit=limit))
+
+
+def search_registry(config: StorageConfig, query: TraceQuery) -> list[dict]:
     db_path = ensure_storage(config)
-    query = """
+    sql = """
         SELECT trace_id, captured_at, provider, model_hint, prompt, confidence_score, overall_status, json_path, html_path
         FROM traces
-        ORDER BY captured_at DESC
     """
-    params: tuple[object, ...] = ()
-    if limit is not None:
-        query += " LIMIT ?"
-        params = (limit,)
+    clauses: list[str] = []
+    params: list[object] = []
+
+    if query.provider:
+        clauses.append("provider = ?")
+        params.append(query.provider)
+    if query.model_hint:
+        clauses.append("model_hint = ?")
+        params.append(query.model_hint)
+    if query.overall_status:
+        clauses.append("overall_status = ?")
+        params.append(query.overall_status)
+    if query.date_from:
+        clauses.append("captured_at >= ?")
+        params.append(query.date_from)
+    if query.date_to:
+        clauses.append("captured_at <= ?")
+        params.append(query.date_to)
+    if query.text:
+        clauses.append("(prompt LIKE ? OR trace_payload LIKE ?)")
+        pattern = f"%{query.text}%"
+        params.extend([pattern, pattern])
+
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY captured_at DESC"
+    if query.limit is not None:
+        sql += " LIMIT ?"
+        params.append(query.limit)
+
     with sqlite3.connect(db_path) as connection:
-        rows = connection.execute(query, params).fetchall()
+        rows = connection.execute(sql, tuple(params)).fetchall()
     return [
         {
             "trace_id": row[0],
@@ -131,5 +172,5 @@ def _trace_from_payload(payload: dict) -> TraceRecord:
 
 
 def _write_legacy_registry(config: StorageConfig) -> None:
-    entries = load_registry(config)
+    entries = search_registry(config, TraceQuery())
     REGISTRY_PATH.write_text(json.dumps(entries, indent=2) + "\n", encoding="utf-8")

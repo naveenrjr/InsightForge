@@ -30,6 +30,7 @@ This repository bootstraps the first local MVP:
 - `insightforge wrap ...` runs any shell command that represents an AI interaction.
 - `insightforge ask ...` talks to supported providers directly.
 - `insightforge list` shows indexed traces from the local registry.
+- `insightforge query` searches indexed traces with filters.
 - `insightforge diff ...` compares two traces and renders a visual report.
 - `insightforge schema-version` shows the current SQLite schema version.
 - `insightforge migrate` upgrades local storage to the latest schema version.
@@ -53,6 +54,7 @@ Current build status:
 - [x] HTML and JSON trace artifacts
 - [x] SQLite-backed local trace registry
 - [x] Trace diffing across runs
+- [x] Local trace search and filtering
 - [x] Policy engine with pass/fail verdicts
 - [x] Redaction before persistence
 - [x] Schema versioning and migration commands
@@ -148,6 +150,7 @@ Comparison workflow:
 
 ```bash
 insightforge list
+insightforge query --provider openai --status fail --text NASA
 insightforge diff trace_id_one trace_id_two --out traces/compare.html
 ```
 
